@@ -1,0 +1,2507 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>假面騎士 3D 雷射全息傳奇卡牌引擎 | KAMEN RIDER 3D TCG</title>
+  <meta name="description" content="專屬假面騎士 3D 鐳射反光卡牌 (Kamen Rider 3D Holographic Foil TCG) - 帝騎 Decade、極狐 Geats IX、555 Faiz、空我 Kuuga 等傳奇騎士，支援 3D 視差、音效、陀螺儀與一鍵匯出。">
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;900&family=Noto+Sans+TC:wght@400;500;700;900&family=Orbitron:wght@600;700;800;900&family=Outfit:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+
+  <!-- FontAwesome 6 Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+  <!-- html2canvas for High-Res PNG Export -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+  <style>
+    /* ==========================================================================
+       1. KAMEN RIDER DESIGN SYSTEM & CSS VARIABLES
+       ========================================================================== */
+    :root {
+      /* Base Sci-Fi Dark Theme */
+      --bg-dark: #07090e;
+      --bg-gradient: radial-gradient(circle at 50% 15%, #181124 0%, #07080d 75%);
+      --panel-bg: rgba(13, 17, 28, 0.82);
+      --panel-border: rgba(255, 255, 255, 0.12);
+      
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+
+      /* Active Rider Theme (Default: 帝騎 DECADE Magenta/Cyan) */
+      --card-theme-primary: #e11d48;
+      --card-theme-secondary: #06b6d4;
+      --card-theme-accent: #f43f5e;
+      --card-theme-glow: rgba(225, 29, 72, 0.65);
+      --card-bg-gradient: linear-gradient(135deg, #3b0724 0%, #090e1a 60%, #082f49 100%);
+      --card-border-gold: linear-gradient(135deg, #fef08a 0%, #e11d48 50%, #06b6d4 100%);
+      --card-frame-color: #4c0519;
+
+      /* Typography */
+      --font-title: 'Orbitron', 'Cinzel', sans-serif;
+      --font-card-title: 'Orbitron', 'Noto Sans TC', sans-serif;
+      --font-sans: 'Outfit', 'Noto Sans TC', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'Space Grotesk', monospace;
+
+      /* Parametric 3D & Optics Controls */
+      --max-tilt-angle: 16;
+      --z-depth-scale: 1;
+      --glare-spot-size: 65%;
+      --foil-blend-mode: hard-light;
+      --foil-opacity: 0.75;
+      --card-corner-radius: 18px;
+      --card-glow-radius: 38px;
+
+      /* Artwork Fine Tuning */
+      --art-scale: 1;
+      --art-offset-x: 0px;
+      --art-offset-y: 0px;
+      --art-brightness: 100%;
+      --art-contrast: 105%;
+
+      /* Dynamic Pointer & 3D Tilt Offsets */
+      --pointer-x: 50%;
+      --pointer-y: 50%;
+      --pointer-from-center: 0;
+      --card-rotate-x: 0deg;
+      --card-rotate-y: 0deg;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--bg-dark);
+      background-image: var(--bg-gradient);
+      color: var(--text-main);
+      min-height: 100vh;
+      overflow-x: hidden;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    /* Ambient Cyber Tokusatsu Grid */
+    .bg-grid {
+      position: fixed;
+      inset: 0;
+      background-image: 
+        linear-gradient(to right, rgba(225, 29, 72, 0.05) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(6, 182, 212, 0.05) 1px, transparent 1px);
+      background-size: 44px 44px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .bg-glow-orb {
+      position: fixed;
+      width: 700px;
+      height: 700px;
+      border-radius: 50%;
+      background: radial-gradient(circle, var(--card-theme-glow) 0%, transparent 70%);
+      top: -120px;
+      left: 10%;
+      filter: blur(100px);
+      opacity: 0.5;
+      pointer-events: none;
+      transition: background 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+      z-index: 0;
+    }
+
+    /* ==========================================================================
+       2. TOP NAVIGATION / STATUS HUD
+       ========================================================================== */
+    header {
+      width: 100%;
+      max-width: 1440px;
+      padding: 1.25rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 10;
+    }
+
+    .brand-logo {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+      font-family: var(--font-title);
+      font-weight: 900;
+      font-size: 1.35rem;
+      letter-spacing: 1.5px;
+      background: linear-gradient(135deg, #ffffff 0%, var(--card-theme-primary) 50%, var(--card-theme-secondary) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      text-transform: uppercase;
+      text-shadow: 0 0 20px rgba(225, 29, 72, 0.3);
+    }
+
+    .brand-icon-box {
+      width: 38px;
+      height: 38px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--card-theme-primary);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--card-theme-primary);
+      box-shadow: 0 0 15px var(--card-theme-glow);
+      -webkit-text-fill-color: initial;
+    }
+
+    .top-actions {
+      display: flex;
+      gap: 0.65rem;
+    }
+
+    .btn-header {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      color: #e2e8f0;
+      padding: 0.5rem 1rem;
+      border-radius: 999px;
+      font-size: 0.825rem;
+      font-weight: 600;
+      cursor: pointer;
+      backdrop-filter: blur(8px);
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+    }
+
+    .btn-header:hover {
+      background: rgba(255, 255, 255, 0.15);
+      border-color: var(--card-theme-primary);
+      color: #fff;
+      box-shadow: 0 0 12px var(--card-theme-glow);
+    }
+
+    .btn-header.active {
+      background: var(--card-theme-primary);
+      color: #fff;
+      border-color: var(--card-theme-primary);
+      box-shadow: 0 0 16px var(--card-theme-glow);
+    }
+
+    /* ==========================================================================
+       3. RESPONSIVE APP LAYOUT (SIDE-BY-SIDE & STACK)
+       ========================================================================== */
+    .app-container {
+      width: 100%;
+      max-width: 1440px;
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 490px;
+      gap: 2.5rem;
+      padding: 1rem 2rem 3rem 2rem;
+      z-index: 10;
+      align-items: start;
+    }
+
+    /* LEFT STAGE: 3D Card Interactive Display */
+    .stage-area {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 680px;
+      position: sticky;
+      top: 1.5rem;
+      perspective: 1300px;
+    }
+
+    .stage-hint {
+      margin-top: 1.5rem;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      background: rgba(8, 12, 22, 0.6);
+      padding: 0.45rem 1.25rem;
+      border-radius: 30px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(8px);
+      letter-spacing: 0.5px;
+    }
+
+    .stage-hint i {
+      color: var(--card-theme-primary);
+      animation: pulseHint 2s infinite ease-in-out;
+    }
+
+    @keyframes pulseHint {
+      0%, 100% { opacity: 0.6; transform: scale(1); }
+      50% { opacity: 1; transform: scale(1.15); }
+    }
+
+    .stage-controls {
+      display: flex;
+      gap: 0.85rem;
+      margin-top: 1.25rem;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .btn-action-primary {
+      background: linear-gradient(135deg, var(--card-theme-primary) 0%, #b91c1c 100%);
+      color: #ffffff;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      padding: 0.8rem 1.6rem;
+      border-radius: 12px;
+      font-size: 0.95rem;
+      font-weight: 800;
+      font-family: var(--font-title);
+      letter-spacing: 0.5px;
+      cursor: pointer;
+      box-shadow: 0 4px 25px var(--card-theme-glow);
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+    }
+
+    .btn-action-primary:hover {
+      transform: translateY(-2px) scale(1.02);
+      box-shadow: 0 8px 30px var(--card-theme-glow);
+      filter: brightness(1.1);
+    }
+
+    .btn-action-secondary {
+      background: rgba(255, 255, 255, 0.08);
+      color: #ffffff;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      padding: 0.8rem 1.35rem;
+      border-radius: 12px;
+      font-size: 0.9rem;
+      font-weight: 700;
+      cursor: pointer;
+      backdrop-filter: blur(10px);
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .btn-action-secondary:hover {
+      background: rgba(255, 255, 255, 0.16);
+      border-color: var(--card-theme-secondary);
+      box-shadow: 0 0 15px rgba(6, 182, 212, 0.3);
+    }
+
+    /* RIGHT: Glassmorphism Control Panel */
+    .control-panel {
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      border-radius: 24px;
+      padding: 1.75rem;
+      backdrop-filter: blur(24px);
+      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+      max-height: calc(100vh - 4.5rem);
+      overflow-y: auto;
+    }
+
+    .control-panel::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .control-panel::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 3px;
+    }
+
+    .panel-header {
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding-bottom: 1rem;
+    }
+
+    .panel-title {
+      font-size: 1.25rem;
+      font-weight: 800;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      font-family: var(--font-title);
+      letter-spacing: 0.5px;
+    }
+
+    .panel-subtitle {
+      font-size: 0.825rem;
+      color: var(--text-muted);
+      margin-top: 0.35rem;
+      line-height: 1.4;
+    }
+
+    /* Tab Navigation */
+    .panel-tabs {
+      display: flex;
+      background: rgba(0, 0, 0, 0.35);
+      padding: 0.35rem;
+      border-radius: 14px;
+      gap: 0.3rem;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .tab-btn {
+      flex: 1;
+      padding: 0.6rem 0.5rem;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 0.825rem;
+      font-weight: 700;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
+      white-space: nowrap;
+    }
+
+    .tab-btn.active {
+      background: rgba(255, 255, 255, 0.14);
+      color: #fff;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+    }
+
+    .tab-content {
+      display: none;
+      flex-direction: column;
+      gap: 1.35rem;
+    }
+
+    .tab-content.active {
+      display: flex;
+    }
+
+    /* Form Controls */
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+    }
+
+    .form-label {
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: #cbd5e1;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .form-label span i {
+      color: var(--card-theme-primary);
+      margin-right: 0.25rem;
+    }
+
+    .form-control {
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 10px;
+      padding: 0.65rem 0.85rem;
+      color: #fff;
+      font-family: inherit;
+      font-size: 0.88rem;
+      transition: all 0.2s ease;
+    }
+
+    .form-control:focus {
+      outline: none;
+      border-color: var(--card-theme-primary);
+      box-shadow: 0 0 0 3px var(--card-theme-glow);
+    }
+
+    textarea.form-control {
+      resize: vertical;
+      min-height: 58px;
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+    }
+
+    /* Rider Preset Cards Grid */
+    .preset-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0.65rem;
+    }
+
+    .preset-card {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      padding: 0.65rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .preset-card:hover {
+      background: rgba(255, 255, 255, 0.09);
+      border-color: rgba(255, 255, 255, 0.3);
+      transform: translateY(-2px);
+    }
+
+    .preset-card.selected {
+      background: rgba(225, 29, 72, 0.18);
+      border-color: var(--card-theme-primary);
+      box-shadow: 0 0 16px var(--card-theme-glow);
+    }
+
+    .preset-thumb {
+      width: 44px;
+      height: 44px;
+      border-radius: 8px;
+      object-fit: cover;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      flex-shrink: 0;
+    }
+
+    .preset-info {
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+    }
+
+    .preset-name {
+      font-size: 0.85rem;
+      font-weight: 800;
+      color: #fff;
+      font-family: var(--font-title);
+    }
+
+    .preset-sub {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+    }
+
+    /* Option Grid for Foil & Layout */
+    .option-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0.6rem;
+    }
+
+    .option-card {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+      padding: 0.75rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      transition: all 0.2s ease;
+    }
+
+    .option-card:hover {
+      background: rgba(255, 255, 255, 0.09);
+      border-color: rgba(255, 255, 255, 0.25);
+    }
+
+    .option-card.selected {
+      background: rgba(225, 29, 72, 0.18);
+      border-color: var(--card-theme-primary);
+      box-shadow: 0 0 12px var(--card-theme-glow);
+    }
+
+    .option-color-dot {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      box-shadow: 0 0 8px rgba(0, 0, 0, 0.5);
+      flex-shrink: 0;
+    }
+
+    .option-title {
+      font-size: 0.825rem;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    /* File Upload Box */
+    .file-upload-box {
+      border: 2px dashed rgba(255, 255, 255, 0.2);
+      border-radius: 12px;
+      padding: 1.25rem;
+      text-align: center;
+      cursor: pointer;
+      background: rgba(0, 0, 0, 0.25);
+      transition: all 0.2s ease;
+    }
+
+    .file-upload-box:hover {
+      border-color: var(--card-theme-primary);
+      background: rgba(225, 29, 72, 0.08);
+    }
+
+    .file-upload-box i {
+      font-size: 1.6rem;
+      color: var(--card-theme-primary);
+      margin-bottom: 0.4rem;
+    }
+
+    .file-upload-text {
+      font-size: 0.85rem;
+      color: #cbd5e1;
+    }
+
+    /* ==========================================================================
+       4. 3D CARD PARALLAX ENGINE & FOIL SHADER SYSTEM
+       ========================================================================== */
+    .card-scene {
+      width: min(86vw, 380px);
+      aspect-ratio: 63 / 88; /* Standard TCG Ratio */
+      position: relative;
+      container-type: inline-size;
+      perspective: 1300px;
+      user-select: none;
+      touch-action: none;
+    }
+
+    .card-wrapper {
+      width: 100%;
+      height: 100%;
+      position: relative;
+      transform-style: preserve-3d;
+      transition: transform 0.12s cubic-bezier(0.2, 0, 0.2, 1);
+      border-radius: var(--card-corner-radius);
+      box-shadow: 
+        0 25px 60px -10px rgba(0, 0, 0, 0.85),
+        0 0 var(--card-glow-radius) var(--card-theme-glow);
+    }
+
+    .card-wrapper.flipping {
+      transition: transform 0.85s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    .card-wrapper.is-flipped {
+      transform: rotateY(180deg) !important;
+    }
+
+    /* Card Faces */
+    .card-face {
+      position: absolute;
+      inset: 0;
+      border-radius: var(--card-corner-radius);
+      backface-visibility: hidden;
+      overflow: hidden;
+      background: var(--card-bg-gradient);
+      border: 2px solid rgba(255, 255, 255, 0.18);
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Card Back (Iconic Decade / Tokusatsu Emblem) */
+    .card-face.card-back {
+      transform: rotateY(180deg);
+      background: radial-gradient(circle at 50% 50%, #2a0818 0%, #08090f 85%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+      border: 3px solid var(--card-theme-primary);
+    }
+
+    .card-back-pattern {
+      position: absolute;
+      inset: 12px;
+      border-radius: calc(var(--card-corner-radius) - 6px);
+      border: 2px solid rgba(225, 29, 72, 0.4);
+      background-image: 
+        repeating-linear-gradient(45deg, rgba(225, 29, 72, 0.12) 0, rgba(225, 29, 72, 0.12) 10px, transparent 10px, transparent 20px),
+        radial-gradient(circle at 50% 50%, rgba(6, 182, 212, 0.15) 0%, transparent 70%);
+      opacity: 0.7;
+    }
+
+    .card-back-emblem {
+      position: relative;
+      z-index: 2;
+      width: 125px;
+      height: 125px;
+      border-radius: 50%;
+      border: 3px solid var(--card-theme-primary);
+      background: rgba(10, 14, 26, 0.95);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 35px var(--card-theme-glow);
+    }
+
+    .card-back-cross {
+      font-size: 3.8rem;
+      color: var(--card-theme-primary);
+      filter: drop-shadow(0 0 10px var(--card-theme-glow));
+    }
+
+    .card-back-text {
+      position: relative;
+      z-index: 2;
+      margin-top: 1.5rem;
+      font-family: var(--font-title);
+      font-size: 1.15rem;
+      font-weight: 900;
+      color: var(--card-theme-primary);
+      letter-spacing: 4px;
+      text-shadow: 0 0 15px var(--card-theme-glow);
+    }
+
+    .card-back-sub {
+      position: relative;
+      z-index: 2;
+      font-size: 0.7rem;
+      color: var(--card-theme-secondary);
+      letter-spacing: 2px;
+      margin-top: 0.25rem;
+      font-family: var(--font-mono);
+    }
+
+    /* ==========================================================================
+       5. CARD FRONT LAYOUT (KAMEN RIDER TCG 5 CORE SECTIONS)
+       ========================================================================== */
+    .card-outer-frame {
+      position: absolute;
+      inset: 0;
+      border-radius: var(--card-corner-radius);
+      padding: 3.4cqw;
+      display: flex;
+      flex-direction: column;
+      background: var(--card-bg-gradient);
+      box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.85);
+    }
+
+    /* Section 1: Header (Rider Era, Name, BP, Element) */
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(10, 14, 26, 0.78);
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      border-radius: 10px;
+      padding: 1.6cqw 2.4cqw;
+      transform: translateZ(calc(28px * var(--z-depth-scale)));
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+      z-index: 4;
+      transition: transform 0.2s ease;
+    }
+
+    .card-header-left {
+      display: flex;
+      flex-direction: column;
+      gap: 0.3cqw;
+    }
+
+    .card-era-badge {
+      font-size: 2.2cqw;
+      font-weight: 800;
+      color: var(--card-theme-secondary);
+      letter-spacing: 0.8px;
+      font-family: var(--font-title);
+      text-transform: uppercase;
+    }
+
+    .card-name {
+      font-family: var(--font-card-title);
+      font-size: 4.4cqw;
+      font-weight: 900;
+      color: #ffffff;
+      letter-spacing: 0.5px;
+      text-shadow: 0 2px 5px rgba(0, 0, 0, 0.9), 0 0 12px var(--card-theme-glow);
+      outline: none;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 50cqw;
+    }
+
+    .card-header-right {
+      display: flex;
+      align-items: center;
+      gap: 1.4cqw;
+    }
+
+    .card-bp-badge {
+      display: flex;
+      align-items: baseline;
+      gap: 0.5cqw;
+      font-family: var(--font-mono);
+      font-weight: 800;
+      color: #f43f5e;
+      text-shadow: 0 0 10px rgba(244, 63, 94, 0.6);
+    }
+
+    .card-bp-label {
+      font-size: 2.4cqw;
+      font-weight: 800;
+    }
+
+    .card-bp-val {
+      font-size: 4.6cqw;
+      font-family: var(--font-title);
+    }
+
+    .card-attribute-icon {
+      width: 7.2cqw;
+      height: 7.2cqw;
+      border-radius: 50%;
+      background: var(--card-theme-primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 3.8cqw;
+      color: #ffffff;
+      box-shadow: 0 0 12px var(--card-theme-glow);
+      border: 1px solid rgba(255, 255, 255, 0.6);
+    }
+
+    /* Section 2: Rider Artwork Window */
+    .card-art-container {
+      position: relative;
+      width: 100%;
+      height: 42%;
+      margin: 1.8cqw 0;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 2px solid rgba(255, 255, 255, 0.28);
+      box-shadow: inset 0 0 25px rgba(0, 0, 0, 0.9), 0 8px 20px rgba(0, 0, 0, 0.5);
+      transform: translateZ(calc(16px * var(--z-depth-scale)));
+      z-index: 2;
+      transition: transform 0.2s ease;
+      background: #000;
+    }
+
+    .card-art-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: center;
+      transform: scale(var(--art-scale)) translate(var(--art-offset-x), var(--art-offset-y));
+      filter: brightness(var(--art-brightness)) contrast(var(--art-contrast));
+      transition: transform 0.2s ease, filter 0.2s ease;
+    }
+
+    .card-art-stamp {
+      position: absolute;
+      top: 2cqw;
+      right: 2cqw;
+      background: linear-gradient(135deg, #fef08a 0%, var(--card-theme-primary) 100%);
+      color: #000;
+      font-size: 2.3cqw;
+      font-weight: 900;
+      font-family: var(--font-title);
+      padding: 0.5cqw 1.8cqw;
+      border-radius: 4px;
+      letter-spacing: 1px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.8);
+      transform: translateZ(calc(26px * var(--z-depth-scale)));
+    }
+
+    .card-form-tag {
+      position: absolute;
+      bottom: 2cqw;
+      left: 2cqw;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(4px);
+      border: 1px solid var(--card-theme-secondary);
+      color: var(--card-theme-secondary);
+      font-size: 2cqw;
+      font-weight: 800;
+      font-family: var(--font-title);
+      padding: 0.4cqw 1.4cqw;
+      border-radius: 4px;
+      letter-spacing: 0.5px;
+      transform: translateZ(calc(24px * var(--z-depth-scale)));
+    }
+
+    /* SAR / Full Art Mode Override */
+    .card-outer-frame.full-art-mode .card-art-container {
+      position: absolute;
+      inset: 0;
+      height: 100%;
+      margin: 0;
+      border-radius: calc(var(--card-corner-radius) - 2px);
+      border: none;
+      z-index: 1;
+    }
+
+    .card-outer-frame.full-art-mode .card-header,
+    .card-outer-frame.full-art-mode .card-body,
+    .card-outer-frame.full-art-mode .card-specs,
+    .card-outer-frame.full-art-mode .card-meta {
+      background: rgba(8, 12, 22, 0.78);
+      backdrop-filter: blur(10px);
+    }
+
+    /* Section 3: Body (Driver System, Trait & Skills) */
+    .card-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 1.6cqw;
+      background: rgba(10, 14, 26, 0.72);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 10px;
+      padding: 2cqw 2.4cqw;
+      transform: translateZ(calc(22px * var(--z-depth-scale)));
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+      z-index: 3;
+      transition: transform 0.2s ease;
+    }
+
+    /* Driver & Passive Box */
+    .card-passive-box {
+      border-bottom: 1px dashed rgba(255, 255, 255, 0.18);
+      padding-bottom: 1.2cqw;
+    }
+
+    .card-driver-tag {
+      font-size: 2cqw;
+      font-weight: 800;
+      color: var(--card-theme-secondary);
+      font-family: var(--font-title);
+      margin-bottom: 0.4cqw;
+      letter-spacing: 0.5px;
+    }
+
+    .card-passive-title {
+      font-size: 2.8cqw;
+      font-weight: 800;
+      color: #fbbf24;
+      display: flex;
+      align-items: center;
+      gap: 1cqw;
+    }
+
+    .card-passive-desc {
+      font-size: 2.4cqw;
+      color: #cbd5e1;
+      margin-top: 0.4cqw;
+      line-height: 1.35;
+      outline: none;
+    }
+
+    /* Skill 1 & Finisher */
+    .card-skill-item {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5cqw;
+    }
+
+    .card-skill-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .card-skill-left {
+      display: flex;
+      align-items: center;
+      gap: 1.2cqw;
+    }
+
+    .card-energy-cost {
+      display: flex;
+      gap: 0.5cqw;
+    }
+
+    .energy-orb {
+      width: 4.2cqw;
+      height: 4.2cqw;
+      border-radius: 50%;
+      background: var(--card-theme-primary);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2.4cqw;
+      color: #ffffff;
+      box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.5);
+    }
+
+    .energy-orb.generic {
+      background: #475569;
+      color: #cbd5e1;
+    }
+
+    .card-skill-name {
+      font-weight: 800;
+      font-size: 3.1cqw;
+      color: #ffffff;
+      outline: none;
+    }
+
+    .card-skill-dmg {
+      font-family: var(--font-title);
+      font-weight: 900;
+      font-size: 4.2cqw;
+      color: #ffffff;
+      text-shadow: 0 0 8px var(--card-theme-glow);
+      outline: none;
+    }
+
+    .card-skill-desc {
+      font-size: 2.3cqw;
+      color: #94a3b8;
+      line-height: 1.3;
+      outline: none;
+    }
+
+    /* Finisher Special Effect */
+    .card-skill-item.ultimate .card-skill-name {
+      color: #fef08a;
+      text-shadow: 0 0 6px rgba(254, 240, 138, 0.5);
+    }
+
+    .card-skill-item.ultimate .card-skill-dmg {
+      color: var(--card-theme-primary);
+      text-shadow: 0 0 12px var(--card-theme-glow);
+    }
+
+    /* Section 4: Rider Combat Specs (Punch, Kick, Speed) */
+    .card-specs {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      align-items: center;
+      background: rgba(10, 14, 26, 0.76);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 8px;
+      padding: 1cqw 1.5cqw;
+      margin-top: 1.2cqw;
+      transform: translateZ(calc(24px * var(--z-depth-scale)));
+      z-index: 3;
+      transition: transform 0.2s ease;
+    }
+
+    .spec-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.2cqw;
+    }
+
+    .spec-label {
+      font-size: 2cqw;
+      color: #64748b;
+      font-weight: 800;
+      text-transform: uppercase;
+      font-family: var(--font-title);
+    }
+
+    .spec-val {
+      font-size: 2.4cqw;
+      font-weight: 800;
+      color: #e2e8f0;
+      font-family: var(--font-mono);
+      display: flex;
+      align-items: center;
+      gap: 0.4cqw;
+    }
+
+    /* Section 5: Barcode & Bandai/Ishimori Meta */
+    .card-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 1.4cqw;
+      padding-top: 0.8cqw;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      transform: translateZ(calc(30px * var(--z-depth-scale)));
+      z-index: 4;
+      transition: transform 0.2s ease;
+    }
+
+    /* Authentic Decade / Kamen Rider Barcode */
+    .card-barcode-box {
+      display: flex;
+      flex-direction: column;
+      gap: 0.3cqw;
+    }
+
+    .card-barcode-lines {
+      height: 14px;
+      width: 140px;
+      background: repeating-linear-gradient(
+        90deg,
+        #fff 0px,
+        #fff 2px,
+        transparent 2px,
+        transparent 4px,
+        #fff 4px,
+        #fff 7px,
+        transparent 7px,
+        transparent 9px,
+        #fff 9px,
+        #fff 10px,
+        transparent 10px,
+        transparent 13px,
+        #fff 13px,
+        #fff 16px,
+        transparent 16px,
+        transparent 18px
+      );
+      opacity: 0.9;
+      box-shadow: 0 0 6px rgba(255, 255, 255, 0.4);
+    }
+
+    .card-barcode-code {
+      font-family: var(--font-mono);
+      font-size: 1.8cqw;
+      font-weight: 700;
+      color: var(--card-theme-secondary);
+      letter-spacing: 0.5px;
+    }
+
+    .card-meta-right {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 0.3cqw;
+    }
+
+    .card-copyright {
+      font-size: 1.6cqw;
+      color: #64748b;
+      font-weight: 600;
+    }
+
+    .card-number {
+      font-family: var(--font-mono);
+      font-size: 2cqw;
+      font-weight: 800;
+      color: #fbbf24;
+    }
+
+    /* ==========================================================================
+       6. 5 MULTI-LAYER KAMEN RIDER HOLOGRAPHIC FOIL SHADERS
+       ========================================================================== */
+    .card-foil-overlay {
+      position: absolute;
+      inset: 0;
+      border-radius: var(--card-corner-radius);
+      pointer-events: none;
+      z-index: 10;
+      transform: translateZ(calc(36px * var(--z-depth-scale)));
+      mix-blend-mode: var(--foil-blend-mode);
+      opacity: var(--foil-opacity);
+      transition: opacity 0.3s ease, mix-blend-mode 0.3s ease, transform 0.2s ease;
+    }
+
+    /* 1. Decade Barcode Holographic Prism (霓虹條碼極光箔膜) */
+    .card-scene[data-foil="decade-barcode"] .card-foil-overlay {
+      background-image: 
+        radial-gradient(circle at var(--pointer-x) var(--pointer-y), rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.15) calc(var(--glare-spot-size) * 0.4), transparent var(--glare-spot-size)),
+        repeating-linear-gradient(
+          calc(var(--card-rotate-y) * 4 + 90deg),
+          rgba(225, 29, 72, 0.6) 0%,
+          rgba(6, 182, 212, 0.6) 20%,
+          rgba(244, 63, 94, 0.6) 40%,
+          rgba(168, 85, 247, 0.6) 60%,
+          rgba(254, 240, 138, 0.6) 80%,
+          rgba(225, 29, 72, 0.6) 100%
+        ),
+        repeating-linear-gradient(
+          0deg,
+          rgba(255, 255, 255, 0.2) 0px,
+          rgba(255, 255, 255, 0.2) 2px,
+          transparent 2px,
+          transparent 8px
+        );
+      background-size: 100% 100%, 250% 250%, 100% 16px;
+      background-position: center, calc(var(--pointer-x) * 0.8) calc(var(--pointer-y) * 0.8), 0 0;
+    }
+
+    /* 2. Geats Kitsune Divine Flame (九尾創世神聖金芒) */
+    .card-scene[data-foil="geats-kitsune"] .card-foil-overlay {
+      background-image: 
+        radial-gradient(circle at var(--pointer-x) var(--pointer-y), rgba(254, 240, 138, 1) 0%, rgba(249, 115, 22, 0.4) 35%, transparent var(--glare-spot-size)),
+        repeating-conic-gradient(
+          from calc(var(--card-rotate-x) * 8 + 45deg) at var(--pointer-x) var(--pointer-y),
+          rgba(254, 240, 138, 0.7) 0deg,
+          rgba(249, 115, 22, 0.5) 30deg,
+          rgba(239, 68, 68, 0.6) 60deg,
+          rgba(254, 240, 138, 0.7) 90deg
+        ),
+        radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.4) 1px, transparent 2px);
+      background-size: 100% 100%, 200% 200%, 12px 12px;
+      background-position: center, center, 0 0;
+    }
+
+    /* 3. Faiz Crimson Photon Stream (光子血液流動鐳射) */
+    .card-scene[data-foil="faiz-photon"] .card-foil-overlay {
+      background-image: 
+        radial-gradient(circle at var(--pointer-x) var(--pointer-y), rgba(255, 255, 255, 0.9) 0%, rgba(239, 68, 68, 0.5) 30%, transparent var(--glare-spot-size)),
+        repeating-linear-gradient(
+          calc(var(--card-rotate-x) * 4 + 45deg),
+          rgba(239, 68, 68, 0.8) 0%,
+          rgba(15, 23, 42, 0.3) 15%,
+          rgba(254, 240, 138, 0.7) 30%,
+          rgba(15, 23, 42, 0.3) 45%,
+          rgba(239, 68, 68, 0.8) 60%
+        ),
+        repeating-linear-gradient(
+          -45deg,
+          rgba(239, 68, 68, 0.3) 0px,
+          rgba(239, 68, 68, 0.3) 1px,
+          transparent 1px,
+          transparent 10px
+        );
+      background-size: 100% 100%, 300% 300%, 20px 20px;
+      background-position: center, calc(var(--pointer-x) * 1.5) calc(var(--pointer-y) * 1.5), 0 0;
+    }
+
+    /* 4. Kuuga Ultimate Dark Gold Emboss (空我究極暗金浮雕) */
+    .card-scene[data-foil="kuuga-gold"] .card-foil-overlay {
+      background-image: 
+        radial-gradient(circle at var(--pointer-x) var(--pointer-y), rgba(254, 240, 138, 1) 0%, rgba(180, 83, 9, 0.4) 30%, transparent var(--glare-spot-size)),
+        linear-gradient(
+          calc(var(--card-rotate-y) * 6 + 135deg),
+          rgba(120, 53, 15, 0.7) 0%,
+          rgba(245, 158, 11, 0.85) 30%,
+          rgba(254, 240, 138, 1) 50%,
+          rgba(245, 158, 11, 0.85) 70%,
+          rgba(120, 53, 15, 0.7) 100%
+        );
+      background-size: 100% 100%, 200% 200%;
+      background-position: center, var(--pointer-x) var(--pointer-y);
+    }
+
+    /* 5. Build Bicolor Physics Laser (紅藍物理公式雙色鐳射) */
+    .card-scene[data-foil="build-formula"] .card-foil-overlay {
+      background-image: 
+        radial-gradient(circle at var(--pointer-x) var(--pointer-y), rgba(255, 255, 255, 1) 0%, transparent var(--glare-spot-size)),
+        repeating-linear-gradient(
+          calc(var(--card-rotate-y) * 5 + 30deg),
+          rgba(239, 68, 68, 0.7) 0%,
+          rgba(239, 68, 68, 0.7) 25%,
+          rgba(59, 130, 246, 0.7) 25%,
+          rgba(59, 130, 246, 0.7) 50%,
+          rgba(16, 185, 129, 0.7) 50%,
+          rgba(16, 185, 129, 0.7) 75%,
+          rgba(239, 68, 68, 0.7) 75%,
+          rgba(239, 68, 68, 0.7) 100%
+        );
+      background-size: 100% 100%, 260% 260%;
+      background-position: center, calc(var(--pointer-x) * 1.1) calc(var(--pointer-y) * 1.1);
+    }
+
+    /* ==========================================================================
+       7. RESPONSIVE BREAKPOINTS (RWD)
+       ========================================================================== */
+    @media (max-width: 1080px) {
+      .app-container {
+        grid-template-columns: 1fr;
+        gap: 2rem;
+      }
+
+      .stage-area {
+        position: relative;
+        top: 0;
+        min-height: 560px;
+      }
+
+      .control-panel {
+        max-height: none;
+      }
+    }
+
+    @media (max-width: 768px) {
+      header {
+        padding: 1rem 1.25rem;
+      }
+
+      .brand-logo {
+        font-size: 1.1rem;
+      }
+
+      .app-container {
+        padding: 0.5rem 1rem 2rem 1rem;
+      }
+
+      .stage-area {
+        min-height: 500px;
+      }
+
+      .card-scene {
+        width: min(88vw, 340px);
+      }
+
+      .preset-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .form-row {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Ambient Background Elements -->
+  <div class="bg-grid"></div>
+  <div class="bg-glow-orb" id="bgGlowOrb"></div>
+
+  <!-- Header HUD -->
+  <header>
+    <div class="brand-logo">
+      <div class="brand-icon-box">
+        <i class="fa-solid fa-bolt-lightning"></i>
+      </div>
+      <span>KAMEN RIDER 3D TCG</span>
+    </div>
+    <div class="top-actions">
+      <button class="btn-header" id="btnAudio" onclick="toggleAudio()">
+        <i class="fa-solid fa-volume-high"></i> 音效: 開啟
+      </button>
+      <button class="btn-header" id="btnAutoSweep" onclick="toggleAutoSweep()">
+        <i class="fa-solid fa-wand-magic-sparkles"></i> 自動光影巡航
+      </button>
+      <button class="btn-header" id="btnGyro" onclick="toggleGyroscope()">
+        <i class="fa-solid fa-mobile-screen"></i> 陀螺儀
+      </button>
+      <button class="btn-header" onclick="resetCardView()">
+        <i class="fa-solid fa-rotate-left"></i> 重設視角
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="app-container">
+
+    <!-- LEFT: 3D Interactive Card Stage -->
+    <section class="stage-area">
+      <div class="card-scene" id="cardScene" data-foil="decade-barcode">
+        <div class="card-wrapper" id="cardWrapper">
+          
+          <!-- Card Front Face -->
+          <div class="card-face card-front">
+            <div class="card-outer-frame" id="cardOuterFrame">
+              
+              <!-- Section 1: Header (Rider Era, Name, BP, Element) -->
+              <div class="card-header">
+                <div class="card-header-left">
+                  <span class="card-era-badge" id="cardEra">HEISEI PHASE 2 · 20TH</span>
+                  <div class="card-name" id="cardName" contenteditable="true" title="點擊直接修改騎士名稱">KAMEN RIDER DECADE</div>
+                </div>
+                <div class="card-header-right">
+                  <div class="card-bp-badge">
+                    <span class="card-bp-label">BP</span>
+                    <span class="card-bp-val" id="cardBp" contenteditable="true">12500</span>
+                  </div>
+                  <div class="card-attribute-icon" id="cardAttrIcon">
+                    <i class="fa-solid fa-circle-nodes"></i>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Section 2: Artwork Window -->
+              <div class="card-art-container">
+                <img id="cardArtImg" class="card-art-img" src="assets/rider_decade.jpg" alt="假面騎士 帝騎 立繪">
+                <div class="card-art-stamp" id="cardStamp">LR ✦ 20TH</div>
+                <div class="card-form-tag" id="cardFormTag">FORM: COMPLETE 21</div>
+              </div>
+
+              <!-- Section 3: Body (Driver, Traits & Skills) -->
+              <div class="card-body">
+                <!-- Driver & Passive -->
+                <div class="card-passive-box">
+                  <div class="card-driver-tag" id="cardDriver">DRIVER: NEO DECADRIVER</div>
+                  <div class="card-passive-title">
+                    <i class="fa-solid fa-masks-theater"></i>
+                    <span id="cardPassiveTitle" contenteditable="true">【特性】世界破壞者・World Destroyer</span>
+                  </div>
+                  <div class="card-passive-desc" id="cardPassiveDesc" contenteditable="true">
+                    「路過的假面騎士罷了，給我記好了！」無視次元屏障穿梭平行世界，攻擊必定暴擊。
+                  </div>
+                </div>
+
+                <!-- Skill 1 -->
+                <div class="card-skill-item">
+                  <div class="card-skill-header">
+                    <div class="card-skill-left">
+                      <div class="card-energy-cost">
+                        <span class="energy-orb"><i class="fa-solid fa-layer-group"></i></span>
+                        <span class="energy-orb generic"><i class="fa-solid fa-circle"></i></span>
+                      </div>
+                      <div class="card-skill-name" id="skill1Name" contenteditable="true">【攻擊駕馭・Attack Ride: Slash】</div>
+                    </div>
+                    <div class="card-skill-dmg" id="skill1Dmg" contenteditable="true">4500</div>
+                  </div>
+                  <div class="card-skill-desc" id="skill1Desc" contenteditable="true">
+                    拔出 Ride Booker 劍模式，斬出粉紅次元次元裂縫連斬，撕裂對手護甲防禦。
+                  </div>
+                </div>
+
+                <!-- Skill 2 (Ultimate Finisher) -->
+                <div class="card-skill-item ultimate">
+                  <div class="card-skill-header">
+                    <div class="card-skill-left">
+                      <div class="card-energy-cost">
+                        <span class="energy-orb"><i class="fa-solid fa-layer-group"></i></span>
+                        <span class="energy-orb"><i class="fa-solid fa-layer-group"></i></span>
+                        <span class="energy-orb"><i class="fa-solid fa-bolt-lightning"></i></span>
+                      </div>
+                      <div class="card-skill-name" id="skill2Name" contenteditable="true">【最終攻擊駕馭・FAR: DECADE】</div>
+                    </div>
+                    <div class="card-skill-dmg" id="skill2Dmg" contenteditable="true">9999</div>
+                  </div>
+                  <div class="card-skill-desc" id="skill2Desc" contenteditable="true">
+                    展開十道黃金騎士卡牌光幕，發動次元迴旋踢！粉碎敵方空間維度並清空戰場。
+                  </div>
+                </div>
+              </div>
+
+              <!-- Section 4: Rider Combat Specs (Punch, Kick, Speed) -->
+              <div class="card-specs">
+                <div class="spec-col">
+                  <span class="spec-label">拳力 PUNCH</span>
+                  <span class="spec-val" id="specPunch" contenteditable="true"><i class="fa-solid fa-hand-fist" style="color:#e11d48;"></i> 55.0 t</span>
+                </div>
+                <div class="spec-col">
+                  <span class="spec-label">踢力 KICK</span>
+                  <span class="spec-val" id="specKick" contenteditable="true"><i class="fa-solid fa-shoe-prints" style="color:#06b6d4;"></i> 120.0 t</span>
+                </div>
+                <div class="spec-col">
+                  <span class="spec-label">走力 SPEED</span>
+                  <span class="spec-val" id="specSpeed" contenteditable="true"><i class="fa-solid fa-gauge-high" style="color:#f59e0b;"></i> 0.9s/100m</span>
+                </div>
+              </div>
+
+              <!-- Section 5: Barcode & Bandai/Ishimori Meta -->
+              <div class="card-meta">
+                <div class="card-barcode-box">
+                  <div class="card-barcode-lines"></div>
+                  <div class="card-barcode-code" id="cardBarcode" contenteditable="true">KMEN-RIDE: DCD-2009-LR</div>
+                </div>
+                <div class="card-meta-right">
+                  <div class="card-number" id="cardNumber" contenteditable="true">NO. DCD-001 ★★★ LR</div>
+                  <div class="card-copyright">© ISHIMORI · TOEI · BANDAI TCG</div>
+                </div>
+              </div>
+
+            </div>
+
+            <!-- Dynamic Holographic Foil Shader Overlay -->
+            <div class="card-foil-overlay" id="foilOverlay"></div>
+          </div>
+
+          <!-- Card Back Face -->
+          <div class="card-face card-back">
+            <div class="card-back-pattern"></div>
+            <div class="card-back-emblem">
+              <i class="fa-solid fa-crosshairs card-back-cross"></i>
+            </div>
+            <div class="card-back-text">KAMEN RIDER TCG</div>
+            <div class="card-back-sub">MASKED RIDER SYSTEM · OFFICIAL BATTLE CARD</div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Stage Hint & Actions -->
+      <div class="stage-hint">
+        <i class="fa-solid fa-hand-pointer"></i> 移動游標 / 傾斜手機觸發 3D 視差與動態雷射全息反射
+      </div>
+
+      <div class="stage-controls">
+        <button class="btn-action-primary" onclick="exportCardPNG()">
+          <i class="fa-solid fa-download"></i> 一鍵匯出高畫質 PNG
+        </button>
+        <button class="btn-action-secondary" onclick="flipCard()">
+          <i class="fa-solid fa-rotate"></i> 翻轉騎士卡背 (3D)
+        </button>
+      </div>
+    </section>
+
+    <!-- RIGHT: Glassmorphism Control Panel -->
+    <aside class="control-panel">
+      
+      <div class="panel-header">
+        <div class="panel-title">
+          <i class="fa-solid fa-sliders"></i> 騎士卡牌工坊與客製化中心
+        </div>
+        <div class="panel-subtitle">假面騎士專屬 3D 鐳射反光卡牌 · 即時自訂、音效聯動與多維度參數微調</div>
+      </div>
+
+      <!-- Tab Navigation -->
+      <nav class="panel-tabs">
+        <button class="tab-btn active" onclick="switchTab('tab-presets', event)">
+          <i class="fa-solid fa-user-astronaut"></i> 騎士預設
+        </button>
+        <button class="tab-btn" onclick="switchTab('tab-style', event)">
+          <i class="fa-solid fa-wand-magic-sparkles"></i> 鐳射與版型
+        </button>
+        <button class="tab-btn" onclick="switchTab('tab-params', event)">
+          <i class="fa-solid fa-sliders"></i> 🎛️ 光影微調
+        </button>
+        <button class="tab-btn" onclick="switchTab('tab-content', event)">
+          <i class="fa-solid fa-pen-to-square"></i> 數值編輯
+        </button>
+      </nav>
+
+      <!-- TAB 1: RIDER PRESETS -->
+      <div class="tab-content active" id="tab-presets">
+        <div class="form-group">
+          <label class="form-label">
+            <span><i class="fa-solid fa-crown"></i> 快速切換傳奇騎士預設</span>
+          </label>
+          <div class="preset-grid">
+            
+            <!-- Preset 1: Decade -->
+            <div class="preset-card selected" onclick="loadRiderPreset('decade', this)">
+              <img src="assets/rider_decade.jpg" class="preset-thumb" alt="Decade">
+              <div class="preset-info">
+                <span class="preset-name">帝騎 DECADE</span>
+                <span class="preset-sub">門矢士 · 霓虹條碼極光</span>
+              </div>
+            </div>
+
+            <!-- Preset 2: Geats IX -->
+            <div class="preset-card" onclick="loadRiderPreset('geats', this)">
+              <img src="assets/rider_geats.jpg" class="preset-thumb" alt="Geats">
+              <div class="preset-info">
+                <span class="preset-name">極狐 GEATS IX</span>
+                <span class="preset-sub">浮世英壽 · 九尾狐火金芒</span>
+              </div>
+            </div>
+
+            <!-- Preset 3: Faiz -->
+            <div class="preset-card" onclick="loadRiderPreset('faiz', this)">
+              <img src="assets/rider_faiz.jpg" class="preset-thumb" alt="Faiz">
+              <div class="preset-info">
+                <span class="preset-name">555 FAIZ</span>
+                <span class="preset-sub">乾巧 · 光子血液鐳射</span>
+              </div>
+            </div>
+
+            <!-- Preset 4: Kuuga -->
+            <div class="preset-card" onclick="loadRiderPreset('kuuga', this)">
+              <img src="assets/rider_kuuga.jpg" class="preset-thumb" alt="Kuuga">
+              <div class="preset-info">
+                <span class="preset-name">空我 KUUGA</span>
+                <span class="preset-sub">五代雄介 · 究極暗金浮雕</span>
+              </div>
+            </div>
+
+            <!-- Preset 5: Build -->
+            <div class="preset-card" onclick="loadRiderPreset('build', this)">
+              <img src="assets/rider_build.jpg" class="preset-thumb" alt="Build">
+              <div class="preset-info">
+                <span class="preset-name">創騎 BUILD</span>
+                <span class="preset-sub">桐生戰兔 · 紅藍物理公式</span>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- Custom Photo Upload -->
+        <div class="form-group" style="margin-top:0.5rem;">
+          <label class="form-label">
+            <span><i class="fa-solid fa-upload"></i> 上傳自己的假面騎士／角色立繪</span>
+          </label>
+          <div class="file-upload-box" onclick="document.getElementById('imageUploader').click()">
+            <i class="fa-solid fa-cloud-arrow-up"></i>
+            <div class="file-upload-text">點擊上傳或拖曳騎士立繪／COS照 (PNG, JPG, WebP)</div>
+            <input type="file" id="imageUploader" accept="image/*" style="display:none;" onchange="handleImageUpload(event)">
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 2: FOIL SHADERS & LAYOUT -->
+      <div class="tab-content" id="tab-style">
+        
+        <!-- Foil Shaders Grid -->
+        <div class="form-group">
+          <label class="form-label">
+            <span><i class="fa-solid fa-sparkles"></i> 選擇動態鐳射全息箔膜 (Holo Foil Shader)</span>
+          </label>
+          <div class="option-grid">
+            <div class="option-card selected" onclick="setFoilMode('decade-barcode', this)">
+              <div class="option-color-dot" style="background: linear-gradient(135deg, #e11d48, #06b6d4, #f43f5e);"></div>
+              <div class="option-title">條碼極光 Prism<br><small style="color:#94a3b8;font-weight:normal;">Decade 專屬</small></div>
+            </div>
+            <div class="option-card" onclick="setFoilMode('geats-kitsune', this)">
+              <div class="option-color-dot" style="background: linear-gradient(135deg, #fef08a, #f97316, #ef4444);"></div>
+              <div class="option-title">九尾金芒 Kitsune<br><small style="color:#94a3b8;font-weight:normal;">Geats IX 專屬</small></div>
+            </div>
+            <div class="option-card" onclick="setFoilMode('faiz-photon', this)">
+              <div class="option-color-dot" style="background: linear-gradient(135deg, #ef4444, #991b1b, #facc15);"></div>
+              <div class="option-title">赤紅光子流 Photon<br><small style="color:#94a3b8;font-weight:normal;">Faiz 專屬</small></div>
+            </div>
+            <div class="option-card" onclick="setFoilMode('kuuga-gold', this)">
+              <div class="option-color-dot" style="background: linear-gradient(135deg, #f59e0b, #78350f, #000000);"></div>
+              <div class="option-title">究極暗金 Gold<br><small style="color:#94a3b8;font-weight:normal;">Kuuga 專屬</small></div>
+            </div>
+            <div class="option-card" onclick="setFoilMode('build-formula', this)">
+              <div class="option-color-dot" style="background: linear-gradient(135deg, #ef4444, #3b82f6, #10b981);"></div>
+              <div class="option-title">雙色公式 Formula<br><small style="color:#94a3b8;font-weight:normal;">Build 專屬</small></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Frame Layout Mode -->
+        <div class="form-group">
+          <label class="form-label">
+            <span><i class="fa-solid fa-image"></i> 卡面版型配置</span>
+          </label>
+          <div class="option-grid">
+            <div class="option-card selected" onclick="setFrameMode(false, this)">
+              <div class="option-title"><i class="fa-solid fa-border-all"></i> 經典機甲框格</div>
+            </div>
+            <div class="option-card" onclick="setFrameMode(true, this)">
+              <div class="option-title"><i class="fa-solid fa-expand"></i> 滿版全圖 SAR / LR</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- TAB 3: FINE-TUNING PARAMETERS -->
+      <div class="tab-content" id="tab-params">
+        
+        <div class="form-group">
+          <label class="form-label" style="color:var(--card-theme-primary); border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 0.3rem;">
+            <span><i class="fa-solid fa-cube"></i> 3D 視差與動態傾角控制</span>
+          </label>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">
+            <span>最大傾斜角度 (Max Tilt Angle)</span>
+            <span id="valTiltAngle">16°</span>
+          </label>
+          <input type="range" class="form-control" min="5" max="35" value="16" oninput="updateParam('tiltAngle', this.value)">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">
+            <span>3D 圖層立體深度倍率 (Z-Depth Multiplier)</span>
+            <span id="valZDepth">1.0x</span>
+          </label>
+          <input type="range" class="form-control" min="0.2" max="2.5" step="0.1" value="1.0" oninput="updateParam('zDepth', this.value)">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" style="color:var(--card-theme-secondary); border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 0.3rem; margin-top: 0.5rem;">
+            <span><i class="fa-solid fa-sun"></i> 全息箔膜光學控制</span>
+          </label>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">
+            <span>全息箔膜不透明度 (Foil Opacity)</span>
+            <span id="valFoilOpacity">75%</span>
+          </label>
+          <input type="range" class="form-control" min="0" max="100" value="75" oninput="updateParam('foilOpacity', this.value)">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">
+            <span>高光光斑聚焦範圍 (Glare Spot Size)</span>
+            <span id="valGlareSize">65%</span>
+          </label>
+          <input type="range" class="form-control" min="20" max="100" value="65" oninput="updateParam('glareSize', this.value)">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">全息光學混合模式 (Foil Blend Mode)</label>
+          <select class="form-control" id="selectBlendMode" onchange="updateParam('blendMode', this.value)">
+            <option value="hard-light" selected>Hard Light (強光全息 - 最佳立體反射)</option>
+            <option value="color-dodge">Color Dodge (顏色亮避 - 極亮高光)</option>
+            <option value="overlay">Overlay (覆蓋高對比)</option>
+            <option value="screen">Screen (濾色霓虹)</option>
+            <option value="difference">Difference (賽博負片光)</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" style="color:#34d399; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 0.3rem; margin-top: 0.5rem;">
+            <span><i class="fa-solid fa-sliders"></i> 騎士立繪位置與微調</span>
+          </label>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">
+              <span>立繪縮放</span>
+              <span id="valArtScale">100%</span>
+            </label>
+            <input type="range" class="form-control" min="80" max="200" value="100" oninput="updateParam('artScale', this.value)">
+          </div>
+          <div class="form-group">
+            <label class="form-label">
+              <span>立繪 X 軸位移</span>
+              <span id="valArtX">0px</span>
+            </label>
+            <input type="range" class="form-control" min="-50" max="50" value="0" oninput="updateParam('artX', this.value)">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">
+              <span>立繪 Y 軸位移</span>
+              <span id="valArtY">0px</span>
+            </label>
+            <input type="range" class="form-control" min="-50" max="50" value="0" oninput="updateParam('artY', this.value)">
+          </div>
+          <div class="form-group">
+            <label class="form-label">
+              <span>立繪亮度</span>
+              <span id="valArtBrightness">100%</span>
+            </label>
+            <input type="range" class="form-control" min="50" max="150" value="100" oninput="updateParam('artBrightness', this.value)">
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-top: 0.5rem;">
+          <button class="btn-action-secondary" style="width:100%; justify-content:center;" onclick="resetAllParams()">
+            <i class="fa-solid fa-rotate-left"></i> 重設所有微調參數
+          </button>
+        </div>
+
+      </div>
+
+      <!-- TAB 4: CONTENT & SPECS EDITING -->
+      <div class="tab-content" id="tab-content">
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">騎士名稱</label>
+            <input type="text" class="form-control" id="inputCardName" value="KAMEN RIDER DECADE" oninput="syncCardText('cardName', this.value)">
+          </div>
+          <div class="form-group">
+            <label class="form-label">戰鬥力 (BP)</label>
+            <input type="text" class="form-control" id="inputCardBp" value="12500" oninput="syncCardText('cardBp', this.value)">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">騎士世代／作品</label>
+            <input type="text" class="form-control" id="inputCardEra" value="HEISEI PHASE 2 · 20TH" oninput="syncCardText('cardEra', this.value)">
+          </div>
+          <div class="form-group">
+            <label class="form-label">稀有度印記</label>
+            <input type="text" class="form-control" id="inputCardStamp" value="LR ✦ 20TH" oninput="syncCardText('cardStamp', this.value)">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">變身腰帶／系統</label>
+            <input type="text" class="form-control" id="inputCardDriver" value="DRIVER: NEO DECADRIVER" oninput="syncCardText('cardDriver', this.value)">
+          </div>
+          <div class="form-group">
+            <label class="form-label">形態標籤 (Form)</label>
+            <input type="text" class="form-control" id="inputCardFormTag" value="FORM: COMPLETE 21" oninput="syncCardText('cardFormTag', this.value)">
+          </div>
+        </div>
+
+        <!-- Passive -->
+        <div class="form-group">
+          <label class="form-label">核心特性標題</label>
+          <input type="text" class="form-control" id="inputPassiveTitle" value="【特性】世界破壞者・World Destroyer" oninput="syncCardText('cardPassiveTitle', this.value)">
+        </div>
+        <div class="form-group">
+          <label class="form-label">特性效果敘述</label>
+          <textarea class="form-control" id="inputPassiveDesc" oninput="syncCardText('cardPassiveDesc', this.value)">「路過的假面騎士罷了，給我記好了！」無視次元屏障穿梭平行世界，攻擊必定暴擊。</textarea>
+        </div>
+
+        <!-- Skill 1 -->
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">招式一名稱</label>
+            <input type="text" class="form-control" id="inputSkill1Name" value="【攻擊駕馭・Attack Ride: Slash】" oninput="syncCardText('skill1Name', this.value)">
+          </div>
+          <div class="form-group">
+            <label class="form-label">傷害值</label>
+            <input type="text" class="form-control" id="inputSkill1Dmg" value="4500" oninput="syncCardText('skill1Dmg', this.value)">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">招式一敘述</label>
+          <textarea class="form-control" id="inputSkill1Desc" oninput="syncCardText('skill1Desc', this.value)">拔出 Ride Booker 劍模式，斬出粉紅次元次元裂縫連斬，撕裂對手護甲防禦。</textarea>
+        </div>
+
+        <!-- Finisher -->
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">必殺奧義名稱</label>
+            <input type="text" class="form-control" id="inputSkill2Name" value="【最終攻擊駕馭・FAR: DECADE】" oninput="syncCardText('skill2Name', this.value)">
+          </div>
+          <div class="form-group">
+            <label class="form-label">必殺傷害</label>
+            <input type="text" class="form-control" id="inputSkill2Dmg" value="9999" oninput="syncCardText('skill2Dmg', this.value)">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">必殺奧義敘述</label>
+          <textarea class="form-control" id="inputSkill2Desc" oninput="syncCardText('skill2Desc', this.value)">展開十道黃金騎士卡牌光幕，發動次元迴旋踢！粉碎敵方空間維度並清空戰場。</textarea>
+        </div>
+
+        <!-- Combat Specs -->
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">拳力 (Punch)</label>
+            <input type="text" class="form-control" id="inputSpecPunch" value="55.0 t" oninput="syncCardText('specPunch', this.value)">
+          </div>
+          <div class="form-group">
+            <label class="form-label">踢力 (Kick)</label>
+            <input type="text" class="form-control" id="inputSpecKick" value="120.0 t" oninput="syncCardText('specKick', this.value)">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">走力 (Speed)</label>
+            <input type="text" class="form-control" id="inputSpecSpeed" value="0.9s/100m" oninput="syncCardText('specSpeed', this.value)">
+          </div>
+          <div class="form-group">
+            <label class="form-label">條碼編號 (Barcode)</label>
+            <input type="text" class="form-control" id="inputCardBarcode" value="KMEN-RIDE: DCD-2009-LR" oninput="syncCardText('cardBarcode', this.value)">
+          </div>
+        </div>
+
+      </div>
+
+    </aside>
+
+  </main>
+
+  <!-- ==========================================================================
+       8. JAVASCRIPT: 3D ENGINE, SOUND SYNTHESIZER, PRESETS & DATA SYNC
+       ========================================================================== -->
+  <script>
+    // DOM Elements
+    const cardScene = document.getElementById('cardScene');
+    const cardWrapper = document.getElementById('cardWrapper');
+    const cardOuterFrame = document.getElementById('cardOuterFrame');
+    const bgGlowOrb = document.getElementById('bgGlowOrb');
+
+    let isGyroActive = false;
+    let isAutoSweepActive = false;
+    let autoSweepFrame = null;
+    let autoSweepTime = 0;
+    let isAudioEnabled = true;
+    let cardBounds = null;
+
+    let maxTiltAngle = 16;
+    let zDepthScale = 1.0;
+
+    function updateBounds() {
+      cardBounds = cardScene.getBoundingClientRect();
+    }
+    window.addEventListener('resize', updateBounds);
+    window.addEventListener('scroll', updateBounds);
+    updateBounds();
+
+    /* --------------------------------------------------------------------------
+       Web Audio API Sound Synthesizer (Zero-dependency Tokusatsu SFX)
+       -------------------------------------------------------------------------- */
+    let audioCtx = null;
+    function getAudioContext() {
+      if (!audioCtx) {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (AudioContext) audioCtx = new AudioContext();
+      }
+      if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+      return audioCtx;
+    }
+
+    function toggleAudio() {
+      isAudioEnabled = !isAudioEnabled;
+      const btn = document.getElementById('btnAudio');
+      if (isAudioEnabled) {
+        btn.innerHTML = '<i class="fa-solid fa-volume-high"></i> 音效: 開啟';
+        playTone(523, 'sine', 0.15, 0.1);
+      } else {
+        btn.innerHTML = '<i class="fa-solid fa-volume-xmark"></i> 音效: 靜音';
+      }
+    }
+
+    function playTone(freq, type = 'sine', duration = 0.1, gainVal = 0.08) {
+      if (!isAudioEnabled) return;
+      try {
+        const ctx = getAudioContext();
+        if (!ctx) return;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, ctx.currentTime);
+        gain.gain.setValueAtTime(gainVal, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + duration);
+      } catch(e) {}
+    }
+
+    // Tokusatsu Henshin Sound
+    function playHenshinJingle() {
+      if (!isAudioEnabled) return;
+      try {
+        const ctx = getAudioContext();
+        if (!ctx) return;
+        const notes = [440, 554, 659, 880, 1108];
+        notes.forEach((freq, idx) => {
+          setTimeout(() => {
+            playTone(freq, 'sawtooth', 0.25, 0.1);
+          }, idx * 60);
+        });
+      } catch(e) {}
+    }
+
+    // Card Flip Whoosh
+    function playFlipWhoosh() {
+      if (!isAudioEnabled) return;
+      try {
+        const ctx = getAudioContext();
+        if (!ctx) return;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(300, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(80, ctx.currentTime + 0.35);
+        gain.gain.setValueAtTime(0.12, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.35);
+      } catch(e) {}
+    }
+
+    // Subtle foil shimmer on tilt
+    let lastTiltSoundTime = 0;
+    function triggerFoilShimmerSound(dist) {
+      if (!isAudioEnabled) return;
+      const now = Date.now();
+      if (now - lastTiltSoundTime > 180 && dist > 0.4) {
+        lastTiltSoundTime = now;
+        const freq = 1200 + dist * 600;
+        playTone(freq, 'sine', 0.08, 0.02);
+      }
+    }
+
+    /* --------------------------------------------------------------------------
+       3D Mouse Move Parallax Calculation
+       -------------------------------------------------------------------------- */
+    cardScene.addEventListener('mousemove', (e) => {
+      if (isGyroActive || isAutoSweepActive) return;
+      if (!cardBounds) updateBounds();
+
+      const mouseX = e.clientX - cardBounds.left;
+      const mouseY = e.clientY - cardBounds.top;
+
+      const px = (mouseX / cardBounds.width) * 100;
+      const py = (mouseY / cardBounds.height) * 100;
+
+      const rotateY = ((mouseX - cardBounds.width / 2) / (cardBounds.width / 2)) * maxTiltAngle;
+      const rotateX = ((mouseY - cardBounds.height / 2) / (cardBounds.height / 2)) * -maxTiltAngle;
+
+      const dx = (mouseX - cardBounds.width / 2) / (cardBounds.width / 2);
+      const dy = (mouseY - cardBounds.height / 2) / (cardBounds.height / 2);
+      const dist = Math.min(Math.sqrt(dx * dx + dy * dy), 1);
+
+      cardScene.style.setProperty('--pointer-x', `${px}%`);
+      cardScene.style.setProperty('--pointer-y', `${py}%`);
+      cardScene.style.setProperty('--card-rotate-x', `${rotateX}deg`);
+      cardScene.style.setProperty('--card-rotate-y', `${rotateY}deg`);
+      cardScene.style.setProperty('--pointer-from-center', dist);
+
+      cardWrapper.style.transform = `rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale3d(1.03, 1.03, 1.03)`;
+      triggerFoilShimmerSound(dist);
+    });
+
+    cardScene.addEventListener('mouseleave', () => {
+      if (isGyroActive || isAutoSweepActive) return;
+      resetCardView();
+    });
+
+    function resetCardView() {
+      cardScene.style.setProperty('--pointer-x', `50%`);
+      cardScene.style.setProperty('--pointer-y', `50%`);
+      cardScene.style.setProperty('--card-rotate-x', `0deg`);
+      cardScene.style.setProperty('--card-rotate-y', `0deg`);
+      cardScene.style.setProperty('--pointer-from-center', '0');
+      cardWrapper.style.transform = `rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1)`;
+    }
+
+    /* --------------------------------------------------------------------------
+       Auto Light-Sweep Mode (自動光影巡航)
+       -------------------------------------------------------------------------- */
+    function toggleAutoSweep() {
+      isAutoSweepActive = !isAutoSweepActive;
+      const btn = document.getElementById('btnAutoSweep');
+      if (isAutoSweepActive) {
+        btn.classList.add('active');
+        runAutoSweep();
+      } else {
+        btn.classList.remove('active');
+        if (autoSweepFrame) cancelAnimationFrame(autoSweepFrame);
+        resetCardView();
+      }
+    }
+
+    function runAutoSweep() {
+      if (!isAutoSweepActive) return;
+      autoSweepTime += 0.025;
+
+      const rotateY = Math.sin(autoSweepTime) * maxTiltAngle * 0.9;
+      const rotateX = Math.cos(autoSweepTime * 0.8) * maxTiltAngle * 0.7;
+
+      const px = 50 + Math.sin(autoSweepTime) * 40;
+      const py = 50 + Math.cos(autoSweepTime * 0.8) * 40;
+
+      cardScene.style.setProperty('--pointer-x', `${px}%`);
+      cardScene.style.setProperty('--pointer-y', `${py}%`);
+      cardScene.style.setProperty('--card-rotate-x', `${rotateX}deg`);
+      cardScene.style.setProperty('--card-rotate-y', `${rotateY}deg`);
+
+      cardWrapper.style.transform = `rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale3d(1.02, 1.02, 1.02)`;
+
+      autoSweepFrame = requestAnimationFrame(runAutoSweep);
+    }
+
+    /* --------------------------------------------------------------------------
+       Mobile Touch & Gyroscope Support
+       -------------------------------------------------------------------------- */
+    cardScene.addEventListener('touchmove', (e) => {
+      if (e.touches.length > 0) {
+        const touch = e.touches[0];
+        if (!cardBounds) updateBounds();
+
+        const mouseX = touch.clientX - cardBounds.left;
+        const mouseY = touch.clientY - cardBounds.top;
+
+        const px = Math.max(0, Math.min(100, (mouseX / cardBounds.width) * 100));
+        const py = Math.max(0, Math.min(100, (mouseY / cardBounds.height) * 100));
+
+        const rotateY = ((mouseX - cardBounds.width / 2) / (cardBounds.width / 2)) * maxTiltAngle;
+        const rotateX = ((mouseY - cardBounds.height / 2) / (cardBounds.height / 2)) * -maxTiltAngle;
+
+        cardScene.style.setProperty('--pointer-x', `${px}%`);
+        cardScene.style.setProperty('--pointer-y', `${py}%`);
+        cardScene.style.setProperty('--card-rotate-x', `${rotateX}deg`);
+        cardScene.style.setProperty('--card-rotate-y', `${rotateY}deg`);
+
+        cardWrapper.style.transform = `rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale3d(1.02, 1.02, 1.02)`;
+      }
+    }, { passive: true });
+
+    cardScene.addEventListener('touchend', () => {
+      resetCardView();
+    });
+
+    function toggleGyroscope() {
+      const btnGyro = document.getElementById('btnGyro');
+      if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+        DeviceOrientationEvent.requestPermission()
+          .then(state => {
+            if (state === 'granted') enableGyro(btnGyro);
+            else alert('未獲取行動裝置陀螺儀權限');
+          })
+          .catch(console.error);
+      } else if (window.DeviceOrientationEvent) {
+        enableGyro(btnGyro);
+      } else {
+        alert('您的裝置不支援陀螺儀感應功能');
+      }
+    }
+
+    function enableGyro(btn) {
+      isGyroActive = !isGyroActive;
+      if (isGyroActive) {
+        btn.classList.add('active');
+        window.addEventListener('deviceorientation', handleOrientation);
+      } else {
+        btn.classList.remove('active');
+        window.removeEventListener('deviceorientation', handleOrientation);
+        resetCardView();
+      }
+    }
+
+    function handleOrientation(e) {
+      if (!isGyroActive) return;
+      const gamma = e.gamma || 0;
+      const beta = e.beta || 0;
+
+      const rotateY = Math.max(-maxTiltAngle * 1.2, Math.min(maxTiltAngle * 1.2, gamma * 0.65));
+      const rotateX = Math.max(-maxTiltAngle * 1.2, Math.min(maxTiltAngle * 1.2, (beta - 45) * -0.55));
+
+      const px = 50 + (rotateY / maxTiltAngle) * 40;
+      const py = 50 + (rotateX / maxTiltAngle) * 40;
+
+      cardScene.style.setProperty('--pointer-x', `${px}%`);
+      cardScene.style.setProperty('--pointer-y', `${py}%`);
+      cardScene.style.setProperty('--card-rotate-x', `${rotateX}deg`);
+      cardScene.style.setProperty('--card-rotate-y', `${rotateY}deg`);
+
+      cardWrapper.style.transform = `rotateX(${rotateX}deg) rotateY(${rotateY}deg)`;
+    }
+
+    /* --------------------------------------------------------------------------
+       5 KAMEN RIDER PRESETS DATABASE
+       -------------------------------------------------------------------------- */
+    const riderDatabase = {
+      decade: {
+        name: 'KAMEN RIDER DECADE',
+        era: 'HEISEI PHASE 2 · 20TH',
+        stamp: 'LR ✦ 20TH',
+        bp: '12500',
+        formTag: 'FORM: COMPLETE 21',
+        driver: 'DRIVER: NEO DECADRIVER',
+        passiveTitle: '【特性】世界破壞者・World Destroyer',
+        passiveDesc: '「路過的假面騎士罷了，給我記好了！」無視次元屏障穿梭平行世界，攻擊必定暴擊。',
+        skill1Name: '【攻擊駕馭・Attack Ride: Slash】',
+        skill1Dmg: '4500',
+        skill1Desc: '拔出 Ride Booker 劍模式，斬出粉紅次元次元裂縫連斬，撕裂對手護甲防禦。',
+        skill2Name: '【最終攻擊駕馭・FAR: DECADE】',
+        skill2Dmg: '9999',
+        skill2Desc: '展開十道黃金騎士卡牌光幕，發動次元迴旋踢！粉碎敵方空間維度並清空戰場。',
+        punch: '55.0 t',
+        kick: '120.0 t',
+        speed: '0.9s/100m',
+        barcode: 'KMEN-RIDE: DCD-2009-LR',
+        number: 'NO. DCD-001 ★★★ LR',
+        img: 'assets/rider_decade.jpg',
+        foil: 'decade-barcode',
+        theme: {
+          primary: '#e11d48',
+          secondary: '#06b6d4',
+          accent: '#f43f5e',
+          glow: 'rgba(225, 29, 72, 0.65)',
+          bg: 'linear-gradient(135deg, #3b0724 0%, #090e1a 60%, #082f49 100%)',
+          icon: '<i class="fa-solid fa-circle-nodes"></i>'
+        }
+      },
+      geats: {
+        name: 'KAMEN RIDER GEATS IX',
+        era: 'REIWA · DESIRE GRAND PRIX',
+        stamp: 'SEC ✦ CREATION',
+        bp: '14800',
+        formTag: 'FORM: DIVINE NINE-TAILS',
+        driver: 'DRIVER: DESIRE DRIVER & BOOST IX',
+        passiveTitle: '【特性】創世之神・God of Creation',
+        passiveDesc: '「這才是真正的 Highlight！」以創世之力重構理想世界，每回合自動恢復全體傷害。',
+        skill1Name: '【武裝九尾・Geats Buster QB9】',
+        skill1Dmg: '5200',
+        skill1Desc: '切換步槍與軍刀模式，釋放九道熾熱白狐靈火彈幕，精準貫穿鎖定目標。',
+        skill2Name: '【九尾昇華踢・BOOST IX VICTORY】',
+        skill2Dmg: '12800',
+        skill2Desc: '九條神聖火焰狐尾完全舒展，化作劃破夜空的九道神聖流星踢，湮滅一切惡意！',
+        punch: '69.9 t',
+        kick: '142.5 t',
+        speed: '0.6s/100m',
+        barcode: 'DGP-RIDE: GTS-2023-SEC',
+        number: 'NO. GTS-009 ★★★ SEC',
+        img: 'assets/rider_geats.jpg',
+        foil: 'geats-kitsune',
+        theme: {
+          primary: '#f59e0b',
+          secondary: '#fbbf24',
+          accent: '#ea580c',
+          glow: 'rgba(245, 158, 11, 0.7)',
+          bg: 'linear-gradient(135deg, #451a03 0%, #0f172a 60%, #7c2d12 100%)',
+          icon: '<i class="fa-solid fa-fire-flame-curved"></i>'
+        }
+      },
+      faiz: {
+        name: 'KAMEN RIDER 555 FAIZ',
+        era: 'HEISEI PHASE 1 · SMART BRAIN',
+        stamp: 'GLR ✦ ACCEL',
+        bp: '9800',
+        formTag: 'FORM: EXCEED CHARGE',
+        driver: 'DRIVER: SB-555B FAIZ DRIVER',
+        passiveTitle: '【特性】光子流超載・Photon Overdrive',
+        passiveDesc: '「我沒有夢想，但我可以守護別人的夢想！」赤紅光子血液流動全身，提供超絕爆發力。',
+        skill1Name: '【加速十秒・Start Up 10s】',
+        skill1Dmg: '4800',
+        skill1Desc: '進入加速形態，千分之一秒內發動多重瞬移刺擊，使敵方陷入無法防禦的時停狀態。',
+        skill2Name: '【巨大重擊・EXCEED CHARGE】',
+        skill2Dmg: '8900',
+        skill2Desc: '將 Faiz Pointer 鎖定敵方標記出緋紅圓錐光錐，發動凌空飛踢化為巨大 Φ 標誌爆炸！',
+        punch: '42.0 t',
+        kick: '85.0 t',
+        speed: '1.2s/100m',
+        barcode: 'SB-CODE: 555-2003-GLR',
+        number: 'NO. FAZ-555 ★★★ GLR',
+        img: 'assets/rider_faiz.jpg',
+        foil: 'faiz-photon',
+        theme: {
+          primary: '#ef4444',
+          secondary: '#94a3b8',
+          accent: '#facc15',
+          glow: 'rgba(239, 68, 68, 0.7)',
+          bg: 'linear-gradient(135deg, #450a0a 0%, #0f172a 70%, #1e293b 100%)',
+          icon: '<i class="fa-solid fa-microchip"></i>'
+        }
+      },
+      kuuga: {
+        name: 'KAMEN RIDER KUUGA',
+        era: 'HEISEI ORIGIN · LINTO',
+        stamp: 'UR ✦ ULTIMATE',
+        bp: '16000',
+        formTag: 'FORM: DARK EYES ULTIMATE',
+        driver: 'DRIVER: ARCLE LINTO STONE',
+        passiveTitle: '【特性】究極之暗・Atomic Bringer',
+        passiveDesc: '「招致究極之暗者，亦或心懷溫柔的戰士。」擁有分解原子物質的超常神話級破壞力。',
+        skill1Name: '【超自然發火・Pyrokinesis】',
+        skill1Dmg: '6000',
+        skill1Desc: '僅需注視敵方即可引發等離子體自燃，造成無視防禦力的高熱等離子焚燒打擊。',
+        skill2Name: '【究極原子踢・ULTIMATE RIDER KICK】',
+        skill2Dmg: '15000',
+        skill2Desc: '全開亞克魯靈石黑金雷火，一記飛踢釋放分子崩壞衝擊波，撕裂方圓數十公里的大地！',
+        punch: '80.0 t',
+        kick: '120.0 t',
+        speed: '1.0s/100m',
+        barcode: 'LINTO: KUG-2000-UR',
+        number: 'NO. KUG-001 ★★★ UR',
+        img: 'assets/rider_kuuga.jpg',
+        foil: 'kuuga-gold',
+        theme: {
+          primary: '#f59e0b',
+          secondary: '#78350f',
+          accent: '#b91c1c',
+          glow: 'rgba(245, 158, 11, 0.8)',
+          bg: 'linear-gradient(135deg, #180900 0%, #0a0a0f 60%, #451a03 100%)',
+          icon: '<i class="fa-solid fa-shield-halved"></i>'
+        }
+      },
+      build: {
+        name: 'KAMEN RIDER BUILD',
+        era: 'HEISEI PHASE 2 · BEST MATCH',
+        stamp: 'CP ✦ GENIUS',
+        bp: '11000',
+        formTag: 'FORM: RABBIT TANK',
+        driver: 'DRIVER: BUILD DRIVER & FULLBOTTLES',
+        passiveTitle: '【特性】天才物理學・Victory Formula',
+        passiveDesc: '「勝利的法則已經決定了！」即時計算戰鬥物理方程式，彈道與反作用力最佳化匹配。',
+        skill1Name: '【鑽頭粉碎者・Drill Crusher】',
+        skill1Dmg: '4200',
+        skill1Desc: '啟動高速迴轉鑽頭渦輪，配合坦克履帶的重裝衝擊力，鑽破防護盾壁！',
+        skill2Name: '【渦卷終結踢・VOLTECH FINISH】',
+        skill2Dmg: '9400',
+        skill2Desc: '地上投影出二維函數曲線圖滑軌，沿著滑軌蓄力急衝，實施極限衝力飛踢！',
+        punch: '55.0 t',
+        kick: '101.0 t',
+        speed: '0.9s/100m',
+        barcode: 'BLD-BOTTLE: RBT-2017-CP',
+        number: 'NO. BLD-001 ★★★ CP',
+        img: 'assets/rider_build.jpg',
+        foil: 'build-formula',
+        theme: {
+          primary: '#ef4444',
+          secondary: '#3b82f6',
+          accent: '#10b981',
+          glow: 'rgba(59, 130, 246, 0.7)',
+          bg: 'linear-gradient(135deg, #3b0716 0%, #091328 60%, #064e3b 100%)',
+          icon: '<i class="fa-solid fa-flask"></i>'
+        }
+      }
+    };
+
+    function loadRiderPreset(key, el) {
+      const data = riderDatabase[key];
+      if (!data) return;
+
+      playHenshinJingle();
+
+      // Update Card Visuals
+      document.getElementById('cardName').innerText = data.name;
+      document.getElementById('cardEra').innerText = data.era;
+      document.getElementById('cardStamp').innerText = data.stamp;
+      document.getElementById('cardBp').innerText = data.bp;
+      document.getElementById('cardFormTag').innerText = data.formTag;
+      document.getElementById('cardDriver').innerText = data.driver;
+      document.getElementById('cardPassiveTitle').innerText = data.passiveTitle;
+      document.getElementById('cardPassiveDesc').innerText = data.passiveDesc;
+      document.getElementById('skill1Name').innerText = data.skill1Name;
+      document.getElementById('skill1Dmg').innerText = data.skill1Dmg;
+      document.getElementById('skill1Desc').innerText = data.skill1Desc;
+      document.getElementById('skill2Name').innerText = data.skill2Name;
+      document.getElementById('skill2Dmg').innerText = data.skill2Dmg;
+      document.getElementById('skill2Desc').innerText = data.skill2Desc;
+      document.getElementById('specPunch').innerHTML = `<i class="fa-solid fa-hand-fist" style="color:${data.theme.primary}"></i> ${data.punch}`;
+      document.getElementById('specKick').innerHTML = `<i class="fa-solid fa-shoe-prints" style="color:${data.theme.secondary}"></i> ${data.kick}`;
+      document.getElementById('specSpeed').innerHTML = `<i class="fa-solid fa-gauge-high" style="color:${data.theme.accent}"></i> ${data.speed}`;
+      document.getElementById('cardBarcode').innerText = data.barcode;
+      document.getElementById('cardNumber').innerText = data.number;
+      document.getElementById('cardArtImg').src = data.img;
+
+      // Update Inputs
+      document.getElementById('inputCardName').value = data.name;
+      document.getElementById('inputCardEra').value = data.era;
+      document.getElementById('inputCardStamp').value = data.stamp;
+      document.getElementById('inputCardBp').value = data.bp;
+      document.getElementById('inputCardDriver').value = data.driver;
+      document.getElementById('inputCardFormTag').value = data.formTag;
+      document.getElementById('inputPassiveTitle').value = data.passiveTitle;
+      document.getElementById('inputPassiveDesc').value = data.passiveDesc;
+      document.getElementById('inputSkill1Name').value = data.skill1Name;
+      document.getElementById('inputSkill1Dmg').value = data.skill1Dmg;
+      document.getElementById('inputSkill1Desc').value = data.skill1Desc;
+      document.getElementById('inputSkill2Name').value = data.skill2Name;
+      document.getElementById('inputSkill2Dmg').value = data.skill2Dmg;
+      document.getElementById('inputSkill2Desc').value = data.skill2Desc;
+      document.getElementById('inputSpecPunch').value = data.punch;
+      document.getElementById('inputSpecKick').value = data.kick;
+      document.getElementById('inputSpecSpeed').value = data.speed;
+      document.getElementById('inputCardBarcode').value = data.barcode;
+
+      // Update Themes & Shader
+      document.documentElement.style.setProperty('--card-theme-primary', data.theme.primary);
+      document.documentElement.style.setProperty('--card-theme-secondary', data.theme.secondary);
+      document.documentElement.style.setProperty('--card-theme-glow', data.theme.glow);
+      document.documentElement.style.setProperty('--card-bg-gradient', data.theme.bg);
+      document.getElementById('cardAttrIcon').innerHTML = data.theme.icon;
+      bgGlowOrb.style.background = `radial-gradient(circle, ${data.theme.glow} 0%, transparent 70%)`;
+
+      document.querySelectorAll('.energy-orb:not(.generic)').forEach(orb => {
+        orb.innerHTML = data.theme.icon;
+      });
+
+      // Update Foil Mode
+      setFoilMode(data.foil);
+
+      // Update preset cards selected state
+      document.querySelectorAll('.preset-card').forEach(p => p.classList.remove('selected'));
+      if (el) el.classList.add('selected');
+    }
+
+    /* --------------------------------------------------------------------------
+       Foil Mode & Frame Mode Setters
+       -------------------------------------------------------------------------- */
+    function setFoilMode(mode, element) {
+      cardScene.setAttribute('data-foil', mode);
+      document.querySelectorAll('#tab-style .option-grid:nth-of-type(1) .option-card').forEach(el => el.classList.remove('selected'));
+      if (element) {
+        element.classList.add('selected');
+      } else {
+        const matching = Array.from(document.querySelectorAll('#tab-style .option-grid:nth-of-type(1) .option-card')).find(el => el.getAttribute('onclick')?.includes(mode));
+        if (matching) matching.classList.add('selected');
+      }
+      playTone(880, 'sine', 0.1, 0.05);
+    }
+
+    function setFrameMode(isFullArt, element) {
+      if (isFullArt) cardOuterFrame.classList.add('full-art-mode');
+      else cardOuterFrame.classList.remove('full-art-mode');
+
+      document.querySelectorAll('#tab-style .option-grid:nth-of-type(2) .option-card').forEach(el => el.classList.remove('selected'));
+      if (element) element.classList.add('selected');
+      playTone(660, 'triangle', 0.1, 0.05);
+    }
+
+    /* --------------------------------------------------------------------------
+       Parametric Fine-Tuning Updates
+       -------------------------------------------------------------------------- */
+    function updateParam(key, val) {
+      const root = document.documentElement;
+      switch(key) {
+        case 'tiltAngle':
+          maxTiltAngle = parseFloat(val);
+          document.getElementById('valTiltAngle').innerText = `${val}°`;
+          break;
+        case 'zDepth':
+          zDepthScale = parseFloat(val);
+          root.style.setProperty('--z-depth-scale', val);
+          document.getElementById('valZDepth').innerText = `${val}x`;
+          break;
+        case 'foilOpacity':
+          root.style.setProperty('--foil-opacity', val / 100);
+          document.getElementById('valFoilOpacity').innerText = `${val}%`;
+          break;
+        case 'glareSize':
+          root.style.setProperty('--glare-spot-size', `${val}%`);
+          document.getElementById('valGlareSize').innerText = `${val}%`;
+          break;
+        case 'blendMode':
+          root.style.setProperty('--foil-blend-mode', val);
+          break;
+        case 'artScale':
+          root.style.setProperty('--art-scale', val / 100);
+          document.getElementById('valArtScale').innerText = `${val}%`;
+          break;
+        case 'artX':
+          root.style.setProperty('--art-offset-x', `${val}px`);
+          document.getElementById('valArtX').innerText = `${val}px`;
+          break;
+        case 'artY':
+          root.style.setProperty('--art-offset-y', `${val}px`);
+          document.getElementById('valArtY').innerText = `${val}px`;
+          break;
+        case 'artBrightness':
+          root.style.setProperty('--art-brightness', `${val}%`);
+          document.getElementById('valArtBrightness').innerText = `${val}%`;
+          break;
+      }
+    }
+
+    function resetAllParams() {
+      updateParam('tiltAngle', 16);
+      updateParam('zDepth', 1.0);
+      updateParam('foilOpacity', 75);
+      updateParam('glareSize', 65);
+      updateParam('blendMode', 'hard-light');
+      updateParam('artScale', 100);
+      updateParam('artX', 0);
+      updateParam('artY', 0);
+      updateParam('artBrightness', 100);
+
+      document.getElementById('selectBlendMode').value = 'hard-light';
+      playTone(550, 'sine', 0.15, 0.05);
+    }
+
+    /* --------------------------------------------------------------------------
+       Image Upload (FileReader API)
+       -------------------------------------------------------------------------- */
+    function handleImageUpload(e) {
+      const file = e.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+          document.getElementById('cardArtImg').src = evt.target.result;
+          playTone(880, 'sine', 0.2, 0.08);
+        };
+        reader.readAsDataURL(file);
+      }
+    }
+
+    /* --------------------------------------------------------------------------
+       3D Card Flip Animation
+       -------------------------------------------------------------------------- */
+    function flipCard() {
+      playFlipWhoosh();
+      cardWrapper.classList.add('flipping');
+      cardWrapper.classList.toggle('is-flipped');
+      setTimeout(() => {
+        cardWrapper.classList.remove('flipping');
+      }, 850);
+    }
+
+    /* --------------------------------------------------------------------------
+       Two-Way Inline & Input Data Sync
+       -------------------------------------------------------------------------- */
+    function syncCardText(elementId, text) {
+      const target = document.getElementById(elementId);
+      if (target) {
+        if (elementId === 'specPunch') {
+          target.innerHTML = `<i class="fa-solid fa-hand-fist" style="color:var(--card-theme-primary)"></i> ${text}`;
+        } else if (elementId === 'specKick') {
+          target.innerHTML = `<i class="fa-solid fa-shoe-prints" style="color:var(--card-theme-secondary)"></i> ${text}`;
+        } else if (elementId === 'specSpeed') {
+          target.innerHTML = `<i class="fa-solid fa-gauge-high" style="color:var(--card-theme-accent)"></i> ${text}`;
+        } else {
+          target.innerText = text;
+        }
+      }
+    }
+
+    document.querySelectorAll('[contenteditable="true"]').forEach(el => {
+      el.addEventListener('input', () => {
+        const id = el.id;
+        const inputMap = {
+          cardName: 'inputCardName',
+          cardBp: 'inputCardBp',
+          cardEra: 'inputCardEra',
+          cardStamp: 'inputCardStamp',
+          cardDriver: 'inputCardDriver',
+          cardFormTag: 'inputCardFormTag',
+          cardPassiveTitle: 'inputPassiveTitle',
+          cardPassiveDesc: 'inputPassiveDesc',
+          skill1Name: 'inputSkill1Name',
+          skill1Dmg: 'inputSkill1Dmg',
+          skill1Desc: 'inputSkill1Desc',
+          skill2Name: 'inputSkill2Name',
+          skill2Dmg: 'inputSkill2Dmg',
+          skill2Desc: 'inputSkill2Desc',
+          cardBarcode: 'inputCardBarcode'
+        };
+        const inputId = inputMap[id];
+        if (inputId) {
+          const inputEl = document.getElementById(inputId);
+          if (inputEl) inputEl.value = el.innerText;
+        }
+      });
+    });
+
+    /* --------------------------------------------------------------------------
+       Tab Navigation
+       -------------------------------------------------------------------------- */
+    function switchTab(tabId, ev) {
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+
+      if (ev && ev.currentTarget) ev.currentTarget.classList.add('active');
+      const target = document.getElementById(tabId);
+      if (target) target.classList.add('active');
+      playTone(700, 'sine', 0.08, 0.03);
+    }
+
+    /* --------------------------------------------------------------------------
+       High-Res PNG Export (html2canvas)
+       -------------------------------------------------------------------------- */
+    function exportCardPNG() {
+      playTone(1046, 'sine', 0.3, 0.1);
+      const currentTransform = cardWrapper.style.transform;
+      cardWrapper.style.transform = 'rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1)';
+
+      const cardFront = document.querySelector('.card-front');
+
+      html2canvas(cardFront, {
+        scale: 3,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: null
+      }).then(canvas => {
+        cardWrapper.style.transform = currentTransform;
+
+        const link = document.createElement('a');
+        const nameText = document.getElementById('cardName').innerText.trim() || 'kamen_rider';
+        const fileName = `${nameText.toLowerCase().replace(/\s+/g, '_')}_3d_foil_card.png`;
+        link.download = fileName;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+      }).catch(err => {
+        console.error('PNG Export failed:', err);
+        cardWrapper.style.transform = currentTransform;
+        alert('卡牌圖片匯出失敗，請確認圖片載入後重試。');
+      });
+    }
+  </script>
+</body>
+</html>
